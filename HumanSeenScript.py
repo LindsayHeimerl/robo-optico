@@ -19,7 +19,7 @@ CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
 COLORS = np.random.uniform(0, 255, size=(len(CLASSES), 3))
 # load our serialized model from disk
 print("[INFO] loading model...")
-net = cv2.dnn.readNetFromCaffe("/home/pi/scratch/dip_shit_eyes/deply.prototext", "/home/pi/scratch/dip_shit_eyes/MobileNetSSD_deploy.caffemodel")
+net = cv2.dnn.readNetFromCaffe("./deploy.prototxt", "./MobileNetSSD_deploy.caffemodel")
 # initialize the video stream, allow the camera sensor to warm up,
 # and initialize the FPS counter
 print("[INFO] starting video stream...")
@@ -75,7 +75,7 @@ def generate():
         yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n')
         # update the FPS counter
         fps.update()
-    
+
 
 @app.route("/video_feed")
 def video_feed():
