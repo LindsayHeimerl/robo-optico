@@ -7,10 +7,11 @@ import time
 import threading
 import robot
 
-lock = threading.Lock()
+frame_lock = threading.Lock()
 frame = None
 detections = None
 position = None
+pos_lock = threading.Lock()
 
 def VisionThread():
     global frame
@@ -20,11 +21,13 @@ def VisionThread():
     vision.StartVideo()
 
     while True:
-        with lock:
+        with frame_lock:
             frame = vision.ReadFrame()
             frame = imutils.resize(frame, width=400)
         detections = vision.RunNeuralNetwork(frame)
-        position = vision.FindHuman(frame, detections)
+
+        with pos_lock:
+            position = vision.FindHuman(frame, detections)
 
         if position is not None:
             print(position)
@@ -34,59 +37,71 @@ def BehaviorThread():
     do_ram = True # For Lindsay's sake
 
     def Transition(to, stop_motors=True):
-        if stop_motore:
+        print('{} -> {}'.format(state, to))
+        if stop_motors:
             robot.SetMotors(0, 0)
-        state = to
+        return to
 
     while True:
-        if state == 'start':
-            if position is not None:
-                Transition('center-human')
-            else:
-                Transition('move-foward')
+        time.sleep(0.1)
+        with pos_lock:
+            if state == 'start':
+                if position is not None:
+                    state = Transition('center-human')
+                else:
+                    time.sleep(0.1)
+                    state = Transition('start')
 
-        elif state == 'center-human':
-            if np.abs(pos[0] - 200) < 5:
-                Transition('follow')
+            elif state == 'center-human':
+                if position is None:
+                    state = Transition('start')
 
-            elif pos[0] > 200:
-                # To the right!
-                robot.SetMotors(0.2, -0.2)
+                elif np.abs(position[0] - 200) < 10:
+                    state = Transition('follow')
 
-            else:
-                # To the left, to the left
-                robot.SetMotors(-0.2, 0.2)
+                elif position[0] > 200:
+                    # To the right!
+                    robot.SetMotors(0.2, -0.2)
 
-        elif state == 'follow':
-            if position is None:
-                Transition('start')
+                else:
+                    # To the left, to the left
+                    robot.SetMotors(-0.2, 0.2)
 
-            elif np.abs(pos[0] - 200) > 5:
-                Transition('center-human')
+            elif state == 'follow':
+                robot.SetMotors(0.5, 0.5)
+                time.sleep(2)
+                state = Transition('start')
+                continue
 
-            elif robot.QueryIrSensor() > 10:
-                robot.SetMotors(1.0, 1.0)
+                if position is None:
+                    state = Transition('start')
 
-            elif not do_ram: # Distance < 10 cm
-                robot.SetMotors(0, 0)
+                elif np.abs(position[0] - 200) > 10:
+                    state = Transition('center-human')
 
-        elif state == 'move-forward':
-            if position is not None:
-                Transition('center-human')
+                elif robot.QueryIrSensor() > 10:
+                    robot.SetMotors(1.0, 1.0)
 
-            elif robot.QueryIrSensor() < 10:
-                Transition('turn')
-            else:
-                robot.SetMotors(0.2, 0.2)
+                elif not do_ram: # Distance < 10 cm
+                    robot.SetMotors(0, 0)
 
-        elif state == 'turn':
-            if np.random.randint(0, 1) == 0:
-                robot.SetMotors(0.2, -0.2)
-            else:
-                robot.SetMotors(-0.2, 0.2)
+            elif state == 'move-forward':
+                if position is not None:
+                    state = Transition('center-human')
 
-            time.sleep(0.3)
-            Transition('start')
+                elif robot.QueryIrSensor() < 10:
+                    state = Transition('turn')
+                else:
+                    robot.SetMotors(0.2, 0.2)
+
+            elif state == 'turn':
+                if np.random.randint(0, 1) == 0:
+                    robot.SetMotors(0.2, -0.2)
+                else:
+                    robot.SetMotors(-0.2, 0.2)
+
+                time.sleep(0.3)
+                state = Transition('start')
 
 
 
@@ -96,7 +111,7 @@ def WebsiteThread():
     def generate():
         while True:
             time.sleep(0.2)
-            with lock:
+            with frame_lock:
                 img = frame.copy()
 
             vision.LabelObjects(img, detections)
@@ -116,12 +131,12 @@ def WebsiteThread():
 vision_thread = threading.Thread(target=VisionThread)
 vision_thread.start()
 
-# behvaior_thread = threading.Thread(target=BehaviorThread)
-# behvaior_thread.start()
+behvaior_thread = threading.Thread(target=BehaviorThread)
+behvaior_thread.start()
 
-website_thread = threading.Thread(target=WebsiteThread)
-website_thread.start()
+# website_thread = threading.Thread(target=WebsiteThread)
+# website_thread.start()
 
 vision_thread.join()
-# behvaior_thread.join()
-website_thread.join()
+behvaior_thread.join()
+# website_thread.join()
